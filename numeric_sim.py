@@ -2,6 +2,10 @@ from typing import List, Tuple, Dict, Optional
 from dataclasses import dataclass
 
 
+# ============================================================================
+# BIT VECTOR UTILITIES
+# ============================================================================
+
 def bits_from_int(value: int, width: int) -> List[int]:
     result = []
     val = value
@@ -51,6 +55,10 @@ def zero_extend(bits: List[int], new_width: int) -> List[int]:
     return bits + [0] * (new_width - len(bits))
 
 
+# ============================================================================
+# TWO'S COMPLEMENT OPERATIONS
+# ============================================================================
+
 @dataclass
 class TwosCompResult:
     bin: str
@@ -78,12 +86,14 @@ def encode_twos_complement(value: int, width: int = 32) -> TwosCompResult:
 def decode_twos_complement(bits: List[int]) -> int:
     width = len(bits)
     unsigned = bits_to_int(bits)
-    # Check sign bit
     if bits[-1] == 1:
-        # Negative number
         return unsigned - (1 << width)
     return unsigned
 
+
+# ============================================================================
+# ALU COMPONENTS
+# ============================================================================
 
 def half_adder(a: int, b: int) -> Tuple[int, int]:
     s = a ^ b
@@ -129,10 +139,10 @@ def bitwise_xor(a_bits: List[int], b_bits: List[int]) -> List[int]:
 @dataclass
 class ALUResult:
     result: List[int]
-    N: int  # Negative
-    Z: int  # Zero
-    C: int  # Carry
-    V: int  # Overflow
+    N: int  
+    Z: int  
+    C: int  
+    V: int  
 
 
 def alu_add(a_bits: List[int], b_bits: List[int]) -> ALUResult:
@@ -154,13 +164,15 @@ def alu_sub(a_bits: List[int], b_bits: List[int]) -> ALUResult:
     N = result[-1]
     Z = 1 if all(b == 0 for b in result) else 0
     C = carry
-
     V = (a_bits[-1] != b_bits[-1]) & (result[-1] != a_bits[-1])
     V = 1 if V else 0
     
     return ALUResult(result=result, N=N, Z=Z, C=C, V=V)
 
 
+# ============================================================================
+# SHIFTER
+# ============================================================================
 
 def shift_left_logical(bits: List[int], shamt: int) -> List[int]:
     width = len(bits)
@@ -187,6 +199,10 @@ def shift_right_arithmetic(bits: List[int], shamt: int) -> List[int]:
     return result
 
 
+# ============================================================================
+# MULTIPLY/DIVIDE UNIT (MDU)
+# ============================================================================
+
 @dataclass
 class MulResult:
     rd: List[int]
@@ -196,25 +212,22 @@ class MulResult:
 
 
 def mdu_mul(op: str, rs1_bits: List[int], rs2_bits: List[int]) -> MulResult:
-    
+   
     width = len(rs1_bits)
     trace = []
     
     if op == 'MUL' or op == 'MULH':
         rs1_val = decode_twos_complement(rs1_bits)
         rs2_val = decode_twos_complement(rs2_bits)
-        is_signed_a = True
-        is_signed_b = True
+        is_signed_mul = True
     elif op == 'MULHU':
         rs1_val = bits_to_int(rs1_bits)
         rs2_val = bits_to_int(rs2_bits)
-        is_signed_a = False
-        is_signed_b = False
+        is_signed_mul = False
     elif op == 'MULHSU':
         rs1_val = decode_twos_complement(rs1_bits)
         rs2_val = bits_to_int(rs2_bits)
-        is_signed_a = True
-        is_signed_b = False
+        is_signed_mul = False  
     else:
         raise ValueError(f"Unknown multiply operation: {op}")
     
@@ -226,16 +239,32 @@ def mdu_mul(op: str, rs1_bits: List[int], rs2_bits: List[int]) -> MulResult:
     
     trace.append(f"Initial: acc={bits_to_hex(accumulator)}")
     
-    for step in range(width):
-        if multiplier[0] == 1:
-            mc_extended = sign_extend(multiplicand, width * 2) if is_signed_a and step == width - 1 else zero_extend(multiplicand, width * 2)
-            accumulator, _ = ripple_carry_adder(accumulator, mc_extended, 0)
-            trace.append(f"Step {step}: multiplier[0]=1, add multiplicand, acc={bits_to_hex(accumulator)}")
-        else:
-            trace.append(f"Step {step}: multiplier[0]=0, no add")
-        
-        multiplicand = shift_left_logical(multiplicand, 1)
-        multiplier = shift_right_logical(multiplier, 1)
+    if op == 'MULHU':
+        for step in range(width):
+            if multiplier[0] == 1:
+                mc_extended = zero_extend(multiplicand, width * 2)
+                accumulator, _ = ripple_carry_adder(accumulator, mc_extended, 0)
+                trace.append(f"Step {step}: multiplier[0]=1, add, acc={bits_to_hex(accumulator)}")
+            else:
+                trace.append(f"Step {step}: multiplier[0]=0, no add")
+            
+            multiplicand = shift_left_logical(multiplicand, 1)
+            multiplier = shift_right_logical(multiplier, 1)
+    else:
+        for step in range(width):
+            if multiplier[0] == 1:
+                if is_signed_mul and step == width - 1:
+                    mc_extended = sign_extend(multiplicand, width * 2)
+                else:
+                    mc_extended = zero_extend(multiplicand, width * 2)
+                
+                accumulator, _ = ripple_carry_adder(accumulator, mc_extended, 0)
+                trace.append(f"Step {step}: multiplier[0]=1, add, acc={bits_to_hex(accumulator)}")
+            else:
+                trace.append(f"Step {step}: multiplier[0]=0, no add")
+            
+            multiplicand = shift_left_logical(multiplicand, 1)
+            multiplier = shift_right_logical(multiplier, 1)
     
     low_bits = accumulator[:width]
     high_bits = accumulator[width:]
@@ -244,10 +273,15 @@ def mdu_mul(op: str, rs1_bits: List[int], rs2_bits: List[int]) -> MulResult:
     
     overflow = 0
     if op == 'MUL':
-        sign_low = low_bits[-1]
-        expected_high = [sign_low] * width
-        if high_bits != expected_high:
+        if is_signed_mul:
+            sign_low = low_bits[-1]
+            expected_high = [sign_low] * width
+            if high_bits != expected_high:
+                overflow = 1
+        
+        if not overflow and any(b == 1 for b in high_bits):
             overflow = 1
+        
         return MulResult(rd=low_bits, hi=high_bits, overflow=overflow, trace=trace)
     else:
         return MulResult(rd=high_bits, hi=None, overflow=0, trace=trace)
@@ -279,7 +313,7 @@ def mdu_div(op: str, rs1_bits: List[int], rs2_bits: List[int]) -> DivResult:
     
     if divisor == 0:
         if op in ['DIV', 'DIVU']:
-            q_bits = [1] * width  
+            q_bits = [1] * width  # -1 (0xFFFFFFFF)
             r_bits = rs1_bits[:]
             trace.append("Division by zero: quotient=-1, remainder=dividend")
             return DivResult(quotient=q_bits, remainder=r_bits, overflow=0, trace=trace)
@@ -348,7 +382,7 @@ def mdu_div(op: str, rs1_bits: List[int], rs2_bits: List[int]) -> DivResult:
     
     if op in ['DIV', 'DIVU']:
         return DivResult(quotient=quotient, remainder=remainder, overflow=0, trace=trace)
-    else:
+    else:  
         return DivResult(quotient=quotient, remainder=remainder, overflow=0, trace=trace)
 
 
