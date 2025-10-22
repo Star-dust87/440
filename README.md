@@ -13,6 +13,8 @@ riscv-numeric-sim/
 ├── numeric_sim.py            # Core module: two's complement, ALU, MDU
 ├── float_ops.py              # IEEE-754 float32 operations
 ├── test_suite.py             # Comprehensive unit tests
+├── AI_USAGE.md               # AI assistance disclosure
+├── ai_report.json            # AI usage metrics
 ```
 
 ## Installation & Requirements
