@@ -1,0 +1,11 @@
+{
+  "project": "RISC-V Numeric Operations Simulator",
+  "course": "CPSC440",
+  "date": "2025-10-21",
+  "total_lines": 1950,
+  "ai_tagged_lines": 110,
+  "percent": 17.7,
+  "tools": ["Claude Sonnet 4.5"],
+  "student_name": "Stella Kim",
+  "student_id": "892330168"
+}
